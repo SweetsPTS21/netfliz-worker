@@ -11,17 +11,65 @@ import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class KafkaConsumerService {
+    private final FileService fileService;
+    private final MovieAssetService movieAssetService;
 
     private final VideoService videoService;
     private final RecommendationService recommendationService;
     private final NotificationService notificationService;
     private final AnalyticsService analyticsService;
     private final PaymentService paymentService;
+
+    @KafkaListener(
+            topics = "${kafka.topics.update-movie-asset}",
+            groupId = "update-movie-asset-group",
+            containerFactory = "kafkaListenerContainerFactory"
+    )
+    public void consumeUpdateMovieAssetEvent(@Payload UpdateMovieAssetEvent event,
+                                             @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+                                             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+                                             @Header(KafkaHeaders.OFFSET) long offset,
+                                             Acknowledgment acknowledgment) {
+
+        try {
+            log.info("Processing UpdateMovieAsset - objectId: {}, partition: {}, offset: {}",
+                    event.getPayload().getObjectId(), partition, offset);
+
+            var payload = event.getPayload();
+            if (Objects.isNull(payload)) {
+                log.error("✗ UpdateMovieAsset event is null");
+                return;
+            }
+
+            var file = payload.getFile();
+            if (Objects.isNull(file)) {
+                log.error("✗ UpdateMovieAsset event file is null");
+                return;
+            }
+
+            // save file
+            var fileEntity = fileService.saveFile(file);
+
+            // save asset
+            movieAssetService.saveMovieAsset(payload, fileEntity.getId());
+
+            // 4. Acknowledge message
+            acknowledgment.acknowledge();
+
+            log.debug("UpdateMovieAsset processed successfully - objectId: {}", event.getPayload().getObjectId());
+
+        } catch (Exception e) {
+            log.error("Error processing UpdateMovieAsset event - objectId: {}",
+                    event.getPayload().getObjectId(), e);
+            // Không acknowledge để retry
+        }
+    }
 
     /**
      * Consumer cho VIDEO VIEW events

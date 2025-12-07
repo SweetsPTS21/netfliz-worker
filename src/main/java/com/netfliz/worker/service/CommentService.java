@@ -1,13 +1,13 @@
 package com.netfliz.worker.service;
 
-import com.netfliz.worker.entity.Comment;
-import com.netfliz.worker.entity.CommentLike;
-import com.netfliz.worker.entity.User;
+import com.netfliz.worker.entity.analysis.Comment;
+import com.netfliz.worker.entity.analysis.CommentLike;
+import com.netfliz.worker.entity.analysis.User;
 import com.netfliz.worker.model.request.CommentRequest;
 import com.netfliz.worker.model.response.CommentResponse;
-import com.netfliz.worker.repository.CommentLikeRepository;
-import com.netfliz.worker.repository.CommentRepository;
-import com.netfliz.worker.repository.UserRepository;
+import com.netfliz.worker.repository.analysis.CommentLikeRepository;
+import com.netfliz.worker.repository.analysis.CommentRepository;
+import com.netfliz.worker.repository.analysis.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;

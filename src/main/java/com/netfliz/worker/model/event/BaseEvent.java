@@ -1,7 +1,6 @@
 package com.netfliz.worker.model.event;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -16,8 +15,19 @@ import java.util.UUID;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonTypeInfo(
+    use = JsonTypeInfo.Id.NAME, 
+    include = JsonTypeInfo.As.EXISTING_PROPERTY, 
+    property = "eventType",
+    visible = true
+)
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = UpdateMovieAssetEvent.class, name = "UPDATE_MOVIE_ASSET")
+    // Add other event types here as needed
+})
 public abstract class BaseEvent<T> {
     private String eventId;
+    @JsonProperty("eventType")
     private String eventType;
     private LocalDateTime timestamp;
     private String source;

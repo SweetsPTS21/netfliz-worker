@@ -1,9 +1,9 @@
 package com.netfliz.worker.service;
 
-import com.netfliz.worker.entity.Like;
-import com.netfliz.worker.entity.Video;
-import com.netfliz.worker.repository.LikeRepository;
-import com.netfliz.worker.repository.VideoRepository;
+import com.netfliz.worker.entity.analysis.Like;
+import com.netfliz.worker.entity.analysis.Video;
+import com.netfliz.worker.repository.analysis.LikeRepository;
+import com.netfliz.worker.repository.analysis.VideoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

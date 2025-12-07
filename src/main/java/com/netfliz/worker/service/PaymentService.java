@@ -1,12 +1,12 @@
 package com.netfliz.worker.service;
 
-import com.netfliz.worker.entity.Payment;
-import com.netfliz.worker.entity.Subscription;
-import com.netfliz.worker.entity.User;
+import com.netfliz.worker.entity.analysis.Payment;
+import com.netfliz.worker.entity.analysis.Subscription;
+import com.netfliz.worker.entity.analysis.User;
 import com.netfliz.worker.model.event.PaymentEvent;
-import com.netfliz.worker.repository.PaymentRepository;
-import com.netfliz.worker.repository.SubscriptionRepository;
-import com.netfliz.worker.repository.UserRepository;
+import com.netfliz.worker.repository.analysis.PaymentRepository;
+import com.netfliz.worker.repository.analysis.SubscriptionRepository;
+import com.netfliz.worker.repository.analysis.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

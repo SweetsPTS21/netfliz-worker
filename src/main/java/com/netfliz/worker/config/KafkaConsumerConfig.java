@@ -1,6 +1,10 @@
 package com.netfliz.worker.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import com.netfliz.worker.constant.KafkaConcurrencyProperties;
+import com.netfliz.worker.model.event.BaseEvent;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,6 +44,22 @@ public class KafkaConsumerConfig {
     }
 
     /**
+     * Configure JSON deserializer with type information
+     */
+    private JsonDeserializer<BaseEvent<?>> jsonDeserializer() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
+                .allowIfSubType("com.netfliz.worker.model.event.")
+                .build();
+        objectMapper.activateDefaultTyping(ptv, ObjectMapper.DefaultTyping.NON_FINAL);
+
+        JsonDeserializer<BaseEvent<?>> deserializer = new JsonDeserializer<>(BaseEvent.class, objectMapper);
+        deserializer.addTrustedPackages("com.netfliz.worker.model.event");
+        deserializer.setUseTypeMapperForKey(true);
+        return deserializer;
+    }
+
+    /**
      * Base Consumer Configuration
      * Cấu hình chung cho tất cả consumers
      */
@@ -51,15 +71,13 @@ public class KafkaConsumerConfig {
         props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
 
         // Deserializer Configuration với Error Handling
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
         props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
         props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
-
-        // JSON Deserializer Configuration
-        props.put(JsonDeserializer.TRUSTED_PACKAGES, "*");
-        props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
-        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, "com.netfliz.worker.model.event.BaseEvent");
+        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, BaseEvent.class.getName());
+        props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, "false");
+        props.put(JsonDeserializer.TRUSTED_PACKAGES, "com.netfliz.worker.model.event");
 
         // Offset Management
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, autoOffsetReset);

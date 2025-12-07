@@ -1,12 +1,12 @@
 package com.netfliz.worker.service;
 
-import com.netfliz.worker.entity.Notification;
-import com.netfliz.worker.entity.UserNotificationPreference;
+import com.netfliz.worker.entity.analysis.Notification;
+import com.netfliz.worker.entity.analysis.UserNotificationPreference;
 import com.netfliz.worker.model.event.NotificationEvent;
 import com.netfliz.worker.model.event.PaymentEvent;
 import com.netfliz.worker.model.event.RecommendationEvent;
-import com.netfliz.worker.repository.NotificationRepository;
-import com.netfliz.worker.repository.UserNotificationPreferenceRepository;
+import com.netfliz.worker.repository.analysis.NotificationRepository;
+import com.netfliz.worker.repository.analysis.UserNotificationPreferenceRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.mail.SimpleMailMessage;

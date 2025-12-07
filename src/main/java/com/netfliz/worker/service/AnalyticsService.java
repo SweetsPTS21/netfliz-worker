@@ -1,11 +1,11 @@
 package com.netfliz.worker.service;
 
-import com.netfliz.worker.entity.AnalyticsEventEntity;
-import com.netfliz.worker.entity.SearchLog;
+import com.netfliz.worker.entity.analysis.AnalyticsEventEntity;
+import com.netfliz.worker.entity.analysis.SearchLog;
 import com.netfliz.worker.model.event.AnalyticsEvent;
 import com.netfliz.worker.model.event.UserActivityEvent;
-import com.netfliz.worker.repository.AnalyticsEventRepository;
-import com.netfliz.worker.repository.SearchLogRepository;
+import com.netfliz.worker.repository.analysis.AnalyticsEventRepository;
+import com.netfliz.worker.repository.analysis.SearchLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

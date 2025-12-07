@@ -1,12 +1,12 @@
 package com.netfliz.worker.service;
 
-import com.netfliz.worker.entity.Recommendation;
-import com.netfliz.worker.entity.UserPreference;
-import com.netfliz.worker.entity.Video;
+import com.netfliz.worker.entity.analysis.Recommendation;
+import com.netfliz.worker.entity.analysis.UserPreference;
+import com.netfliz.worker.entity.analysis.Video;
 import com.netfliz.worker.model.event.RecommendationEvent;
-import com.netfliz.worker.repository.RecommendationRepository;
-import com.netfliz.worker.repository.UserPreferenceRepository;
-import com.netfliz.worker.repository.VideoRepository;
+import com.netfliz.worker.repository.analysis.RecommendationRepository;
+import com.netfliz.worker.repository.analysis.UserPreferenceRepository;
+import com.netfliz.worker.repository.analysis.VideoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;

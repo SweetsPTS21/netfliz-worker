@@ -1,12 +1,12 @@
 package com.netfliz.worker.service;
 
-import com.netfliz.worker.entity.*;
+import com.netfliz.worker.entity.analysis.*;
 import com.netfliz.worker.model.event.UserActivityEvent;
 import com.netfliz.worker.model.event.VideoViewEvent;
 import com.netfliz.worker.model.request.VideoFilterRequest;
 import com.netfliz.worker.model.request.VideoSearchRequest;
 import com.netfliz.worker.model.response.*;
-import com.netfliz.worker.repository.*;
+import com.netfliz.worker.repository.analysis.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
