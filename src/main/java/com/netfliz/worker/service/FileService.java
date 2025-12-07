@@ -18,6 +18,7 @@ public class FileService {
                 .fileSize(payload.getFileSize())
                 .fileExtension(payload.getFileExtension())
                 .fileDownloadUri(payload.getFileDownloadUri())
+                .fileCategory(payload.getFileCategory())
                 .fileOwner(payload.getFileOwner())
                 .fileUploader(payload.getFileUploader())
                 .fileType(payload.getFileType())
