@@ -38,6 +38,7 @@ public class MovieAssetService {
         movieAssetRepository.save(MovieAssetEntity.builder()
                 .objectId(payload.getObjectId())
                 .objectType(MovieObjectType.fromId(payload.getObjectType()))
+                .name(payload.getName())
                 .assetType(MovieAssetType.fromId(payload.getAssetType()))
                 .format(payload.getFormat())
                 .drm(JsonUtils.parse(payload.getDrm()))
