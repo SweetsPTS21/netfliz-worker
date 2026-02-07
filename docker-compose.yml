@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # =======================
+  # Netfliz Worker Service
+  # =======================
+  netfliz-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: netfliz-worker
+    ports:
+      - "8083:8083"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - netfliz-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # =======================
+  # PostgreSQL Database
+  # =======================
+  postgres:
+    image: postgres:16-alpine
+    container_name: netfliz-postgres
+    ports:
+      - "5433:5432"
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-netfliz}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - netfliz-network
+    restart: unless-stopped
+
+networks:
+  netfliz-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
