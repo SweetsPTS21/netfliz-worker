@@ -1,5 +1,7 @@
 package com.netfliz.worker.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.netfliz.worker.model.event.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -15,9 +17,10 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 public class KafkaProducerService {
 
-    private final KafkaTemplate<String, Object> standardTemplate;
-    private final KafkaTemplate<String, Object> highPriorityTemplate;
-    private final KafkaTemplate<String, Object> analyticsTemplate;
+    private final KafkaTemplate<String, String> standardTemplate;
+    private final KafkaTemplate<String, String> highPriorityTemplate;
+    private final KafkaTemplate<String, String> analyticsTemplate;
+    private final ObjectMapper objectMapper;
 
     @Value("${kafka.topics.video-view}")
     private String videoViewTopic;
@@ -41,19 +44,21 @@ public class KafkaProducerService {
     private String analyticsTopic;
 
     public KafkaProducerService(
-            @Qualifier("kafkaTemplate") KafkaTemplate<String, Object> standardTemplate,
-            @Qualifier("highPriorityKafkaTemplate") KafkaTemplate<String, Object> highPriorityTemplate,
-            @Qualifier("analyticsKafkaTemplate") KafkaTemplate<String, Object> analyticsTemplate) {
+            @Qualifier("kafkaTemplate") KafkaTemplate<String, String> standardTemplate,
+            @Qualifier("highPriorityKafkaTemplate") KafkaTemplate<String, String> highPriorityTemplate,
+            @Qualifier("analyticsKafkaTemplate") KafkaTemplate<String, String> analyticsTemplate,
+            ObjectMapper objectMapper) {
         this.standardTemplate = standardTemplate;
         this.highPriorityTemplate = highPriorityTemplate;
         this.analyticsTemplate = analyticsTemplate;
+        this.objectMapper = objectMapper;
     }
 
     /**
      * Gửi event xem video
      * Sử dụng userId làm key để đảm bảo messages từ cùng user vào cùng partition
      */
-    public CompletableFuture<SendResult<String, Object>> sendVideoViewEvent(VideoViewEvent event) {
+    public CompletableFuture<SendResult<String, String>> sendVideoViewEvent(VideoViewEvent event) {
         event.setEventId(UUID.randomUUID().toString());
 
         log.info("Sending video view event - userId: {}, videoId: {}",
@@ -64,15 +69,14 @@ public class KafkaProducerService {
                 videoViewTopic,
                 event.getUserId().toString(),
                 event,
-                "VideoView"
-        );
+                "VideoView");
     }
 
     /**
      * Gửi event tiến độ xem video
      * Key = userId + videoId để đảm bảo ordering cho cùng user-video
      */
-    public CompletableFuture<SendResult<String, Object>> sendVideoProgressEvent(VideoProgressEvent event) {
+    public CompletableFuture<SendResult<String, String>> sendVideoProgressEvent(VideoProgressEvent event) {
         String key = event.getUserId() + "-" + event.getVideoId();
 
         log.debug("Sending video progress - userId: {}, videoId: {}, position: {}s",
@@ -83,14 +87,13 @@ public class KafkaProducerService {
                 videoProgressTopic,
                 key,
                 event,
-                "VideoProgress"
-        );
+                "VideoProgress");
     }
 
     /**
      * Gửi event hoạt động user
      */
-    public CompletableFuture<SendResult<String, Object>> sendUserActivityEvent(UserActivityEvent event) {
+    public CompletableFuture<SendResult<String, String>> sendUserActivityEvent(UserActivityEvent event) {
         event.setEventId(UUID.randomUUID().toString());
 
         log.info("Sending user activity - userId: {}, type: {}",
@@ -101,14 +104,13 @@ public class KafkaProducerService {
                 userActivityTopic,
                 event.getUserId().toString(),
                 event,
-                "UserActivity"
-        );
+                "UserActivity");
     }
 
     /**
      * Gửi event gợi ý phim
      */
-    public CompletableFuture<SendResult<String, Object>> sendRecommendationEvent(RecommendationEvent event) {
+    public CompletableFuture<SendResult<String, String>> sendRecommendationEvent(RecommendationEvent event) {
         log.debug("Sending recommendation - userId: {}, videoId: {}, type: {}",
                 event.getUserId(), event.getVideoId(), event.getRecommendationType());
 
@@ -117,15 +119,14 @@ public class KafkaProducerService {
                 recommendationTopic,
                 event.getUserId().toString(),
                 event,
-                "Recommendation"
-        );
+                "Recommendation");
     }
 
     /**
      * Gửi thông báo
      * Sử dụng nhiều thread consumer nên có thể gửi nhanh
      */
-    public CompletableFuture<SendResult<String, Object>> sendNotificationEvent(NotificationEvent event) {
+    public CompletableFuture<SendResult<String, String>> sendNotificationEvent(NotificationEvent event) {
         event.setNotificationId(UUID.randomUUID().toString());
 
         log.info("Sending notification - userId: {}, type: {}",
@@ -136,25 +137,23 @@ public class KafkaProducerService {
                 notificationTopic,
                 event.getUserId().toString(),
                 event,
-                "Notification"
-        );
+                "Notification");
     }
 
     /**
      * Gửi event thanh toán
      * Sử dụng HIGH PRIORITY template với reliability cao nhất
      */
-    public CompletableFuture<SendResult<String, Object>> sendPaymentEvent(PaymentEvent event) {
+    public CompletableFuture<SendResult<String, String>> sendPaymentEvent(PaymentEvent event) {
         log.warn("Sending CRITICAL payment event - transactionId: {}, userId: {}, amount: {}",
                 event.getTransactionId(), event.getUserId(), event.getAmount());
 
-        CompletableFuture<SendResult<String, Object>> future = sendMessage(
-                highPriorityTemplate,  // Dùng high priority template
+        CompletableFuture<SendResult<String, String>> future = sendMessage(
+                highPriorityTemplate, // Dùng high priority template
                 paymentTopic,
                 event.getTransactionId(),
                 event,
-                "Payment"
-        );
+                "Payment");
 
         // Thêm callback đặc biệt cho payment
         future.whenComplete((result, ex) -> {
@@ -183,13 +182,18 @@ public class KafkaProducerService {
         log.debug("Sending analytics event - type: {}, userId: {}",
                 event.getEventType(), event.getUserId());
 
-        // Fire and forget cho analytics - không cần đợi response
-        analyticsTemplate.send(analyticsTopic, event.getSessionId(), event)
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.warn("Failed to send analytics event (non-critical): {}", ex.getMessage());
-                    }
-                });
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(event);
+            // Fire and forget cho analytics - không cần đợi response
+            analyticsTemplate.send(analyticsTopic, event.getSessionId(), jsonPayload)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            log.warn("Failed to send analytics event (non-critical): {}", ex.getMessage());
+                        }
+                    });
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize analytics event", e);
+        }
     }
 
     /**
@@ -201,42 +205,48 @@ public class KafkaProducerService {
 
         CompletableFuture.allOf(
                 sendVideoViewEvent(viewEvent),
-                sendUserActivityEvent(activityEvent)
-        ).whenComplete((result, ex) -> {
-            if (ex == null) {
-                log.info("✓ All batch events sent successfully");
-            } else {
-                log.error("✗ Some batch events failed", ex);
-            }
-        });
+                sendUserActivityEvent(activityEvent)).whenComplete((result, ex) -> {
+                    if (ex == null) {
+                        log.info("✓ All batch events sent successfully");
+                    } else {
+                        log.error("✗ Some batch events failed", ex);
+                    }
+                });
     }
 
     /**
      * Method chung để gửi message với callback
+     * Convert object to JSON string before sending
      */
-    private CompletableFuture<SendResult<String, Object>> sendMessage(
-            KafkaTemplate<String, Object> template,
+    private CompletableFuture<SendResult<String, String>> sendMessage(
+            KafkaTemplate<String, String> template,
             String topic,
             String key,
             Object event,
             String eventType) {
 
-        CompletableFuture<SendResult<String, Object>> future = template.send(topic, key, event);
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(event);
+            CompletableFuture<SendResult<String, String>> future = template.send(topic, key, jsonPayload);
 
-        future.whenComplete((result, ex) -> {
-            if (ex == null) {
-                log.debug("✓ {} event sent - topic: {}, partition: {}, offset: {}",
-                        eventType,
-                        topic,
-                        result.getRecordMetadata().partition(),
-                        result.getRecordMetadata().offset());
-            } else {
-                log.error("✗ Failed to send {} event to topic: {}, key: {}",
-                        eventType, topic, key, ex);
-            }
-        });
+            future.whenComplete((result, ex) -> {
+                if (ex == null) {
+                    log.debug("✓ {} event sent - topic: {}, partition: {}, offset: {}",
+                            eventType,
+                            topic,
+                            result.getRecordMetadata().partition(),
+                            result.getRecordMetadata().offset());
+                } else {
+                    log.error("✗ Failed to send {} event to topic: {}, key: {}",
+                            eventType, topic, key, ex);
+                }
+            });
 
-        return future;
+            return future;
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize {} event", eventType, e);
+            return CompletableFuture.failedFuture(e);
+        }
     }
 
     /**

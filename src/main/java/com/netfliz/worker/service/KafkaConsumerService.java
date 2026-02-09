@@ -1,7 +1,10 @@
 package com.netfliz.worker.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.netfliz.worker.model.event.*;
-import lombok.RequiredArgsConstructor;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
@@ -10,46 +13,49 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
+@AllArgsConstructor
 public class KafkaConsumerService {
     private final FileService fileService;
     private final MovieAssetService movieAssetService;
-
     private final VideoService videoService;
     private final RecommendationService recommendationService;
     private final NotificationService notificationService;
     private final AnalyticsService analyticsService;
     private final PaymentService paymentService;
+    private final ObjectMapper objectMapper;
 
     @KafkaListener(
             topics = "${kafka.topics.update-movie-asset}",
             groupId = "update-movie-asset-group",
             containerFactory = "kafkaListenerContainerFactory"
     )
-    public void consumeUpdateMovieAssetEvent(@Payload UpdateMovieAssetEvent event,
-                                             @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
-                                             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
-                                             @Header(KafkaHeaders.OFFSET) long offset,
-                                             Acknowledgment acknowledgment) {
-
+    public void consumeUpdateMovieAssetEvent(@Payload String jsonPayload,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset,
+            Acknowledgment acknowledgment) {
         try {
+            UpdateMovieAssetEvent event = objectMapper.readValue(jsonPayload, UpdateMovieAssetEvent.class);
+
             log.info("Processing UpdateMovieAsset - objectId: {}, partition: {}, offset: {}",
                     event.getPayload().getObjectId(), partition, offset);
 
             var payload = event.getPayload();
-            if (Objects.isNull(payload)) {
-                log.error("✗ UpdateMovieAsset event is null");
+            if (payload == null) {
+                log.error("✗ UpdateMovieAsset event payload is null");
+                acknowledgment.acknowledge();
                 return;
             }
 
             var file = payload.getFile();
-            if (Objects.isNull(file)) {
+            if (file == null) {
                 log.error("✗ UpdateMovieAsset event file is null");
+                acknowledgment.acknowledge();
                 return;
             }
 
@@ -59,14 +65,14 @@ public class KafkaConsumerService {
             // save asset
             movieAssetService.saveMovieAsset(payload, fileEntity.getId());
 
-            // 4. Acknowledge message
             acknowledgment.acknowledge();
-
             log.debug("UpdateMovieAsset processed successfully - objectId: {}", event.getPayload().getObjectId());
 
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse UpdateMovieAsset event JSON", e);
+            acknowledgment.acknowledge();
         } catch (Exception e) {
-            log.error("Error processing UpdateMovieAsset event - objectId: {}",
-                    event.getPayload().getObjectId(), e);
+            log.error("Error processing UpdateMovieAsset event", e);
             // Không acknowledge để retry
         }
     }
@@ -77,19 +83,17 @@ public class KafkaConsumerService {
      * - Lưu lịch sử xem
      * - Trigger recommendation
      */
-    @KafkaListener(
-            topics = "${kafka.topics.video-view}",
-            groupId = "video-view-group",
-            containerFactory = "kafkaListenerContainerFactory"
-    )
+    @KafkaListener(topics = "${kafka.topics.video-view}", groupId = "video-view-group", containerFactory = "kafkaListenerContainerFactory")
     public void consumeVideoViewEvent(
-            @Payload VideoViewEvent event,
+            @Payload String jsonPayload,
             @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
             @Header(KafkaHeaders.OFFSET) long offset,
             Acknowledgment acknowledgment) {
 
         try {
+            VideoViewEvent event = objectMapper.readValue(jsonPayload, VideoViewEvent.class);
+
             log.info("📺 Processing VideoView - userId: {}, videoId: {}, partition: {}, offset: {}",
                     event.getUserId(), event.getVideoId(), partition, offset);
 
@@ -102,17 +106,16 @@ public class KafkaConsumerService {
             // 3. Update user preferences cho recommendation
             recommendationService.updateUserPreferences(
                     event.getUserId(),
-                    event.getVideoId()
-            );
+                    event.getVideoId());
 
-            // 4. Acknowledge message
             acknowledgment.acknowledge();
-
             log.debug("✓ VideoView processed successfully - userId: {}", event.getUserId());
 
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse VideoView event JSON", e);
+            acknowledgment.acknowledge();
         } catch (Exception e) {
-            log.error("✗ Error processing VideoView event - userId: {}, videoId: {}",
-                    event.getUserId(), event.getVideoId(), e);
+            log.error("✗ Error processing VideoView event", e);
             // Không acknowledge để retry
         }
     }
@@ -122,16 +125,14 @@ public class KafkaConsumerService {
      * - Lưu tiến độ xem
      * - Generate recommendations khi xem xong
      */
-    @KafkaListener(
-            topics = "${kafka.topics.video-progress}",
-            groupId = "video-progress-group",
-            containerFactory = "kafkaListenerContainerFactory"
-    )
+    @KafkaListener(topics = "${kafka.topics.video-progress}", groupId = "video-progress-group", containerFactory = "kafkaListenerContainerFactory")
     public void consumeVideoProgressEvent(
-            @Payload VideoProgressEvent event,
+            @Payload String jsonPayload,
             Acknowledgment acknowledgment) {
 
         try {
+            VideoProgressEvent event = objectMapper.readValue(jsonPayload, VideoProgressEvent.class);
+
             log.debug("⏯️ Updating progress - userId: {}, videoId: {}, position: {}s/{}s ({}%)",
                     event.getUserId(),
                     event.getVideoId(),
@@ -144,8 +145,7 @@ public class KafkaConsumerService {
                     event.getUserId(),
                     event.getVideoId(),
                     event.getCurrentPosition(),
-                    event.getPercentComplete()
-            );
+                    event.getPercentComplete());
 
             // Nếu xem xong (>=95%), gợi ý phim tương tự
             if (event.getCompleted() != null && event.getCompleted()) {
@@ -154,16 +154,16 @@ public class KafkaConsumerService {
 
                 recommendationService.generateSimilarMovieRecommendations(
                         event.getUserId(),
-                        event.getVideoId()
-                );
+                        event.getVideoId());
             }
 
             acknowledgment.acknowledge();
 
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse VideoProgress event JSON", e);
+            acknowledgment.acknowledge();
         } catch (Exception e) {
-            log.error("✗ Error processing VideoProgress - userId: {}, videoId: {}",
-                    event.getUserId(), event.getVideoId(), e);
-            // Vẫn acknowledge vì progress không quá critical
+            log.error("✗ Error processing VideoProgress event", e);
             acknowledgment.acknowledge();
         }
     }
@@ -172,16 +172,14 @@ public class KafkaConsumerService {
      * Consumer cho USER ACTIVITY events
      * - Xử lý LIKE, COMMENT, SHARE, SEARCH, ADD_TO_WATCHLIST
      */
-    @KafkaListener(
-            topics = "${kafka.topics.user-activity}",
-            groupId = "user-activity-group",
-            containerFactory = "kafkaListenerContainerFactory"
-    )
+    @KafkaListener(topics = "${kafka.topics.user-activity}", groupId = "user-activity-group", containerFactory = "kafkaListenerContainerFactory")
     public void consumeUserActivityEvent(
-            @Payload UserActivityEvent event,
+            @Payload String jsonPayload,
             Acknowledgment acknowledgment) {
 
         try {
+            UserActivityEvent event = objectMapper.readValue(jsonPayload, UserActivityEvent.class);
+
             log.info("👤 Processing activity - userId: {}, type: {}, targetId: {}",
                     event.getUserId(), event.getActivityType(), event.getTargetId());
 
@@ -195,8 +193,7 @@ public class KafkaConsumerService {
                     videoService.handleLike(event.getUserId(), event.getTargetId());
                     recommendationService.updateUserPreferences(
                             event.getUserId(),
-                            event.getTargetId()
-                    );
+                            event.getTargetId());
                     log.debug("Processed LIKE for videoId: {}", event.getTargetId());
                     break;
 
@@ -221,10 +218,12 @@ public class KafkaConsumerService {
 
             acknowledgment.acknowledge();
 
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse UserActivity event JSON", e);
+            acknowledgment.acknowledge();
         } catch (Exception e) {
-            log.error("✗ Error processing UserActivity - userId: {}, type: {}",
-                    event.getUserId(), event.getActivityType(), e);
-            acknowledgment.acknowledge(); // Acknowledge để không block queue
+            log.error("✗ Error processing UserActivity event", e);
+            acknowledgment.acknowledge();
         }
     }
 
@@ -233,16 +232,14 @@ public class KafkaConsumerService {
      * - Lưu recommendations
      * - Gửi notification cho high-score recommendations
      */
-    @KafkaListener(
-            topics = "${kafka.topics.recommendation}",
-            groupId = "recommendation-group",
-            containerFactory = "kafkaListenerContainerFactory"
-    )
+    @KafkaListener(topics = "${kafka.topics.recommendation}", groupId = "recommendation-group", containerFactory = "kafkaListenerContainerFactory")
     public void consumeRecommendationEvent(
-            @Payload RecommendationEvent event,
+            @Payload String jsonPayload,
             Acknowledgment acknowledgment) {
 
         try {
+            RecommendationEvent event = objectMapper.readValue(jsonPayload, RecommendationEvent.class);
+
             log.debug("💡 Processing recommendation - userId: {}, videoId: {}, type: {}, score: {}",
                     event.getUserId(), event.getVideoId(),
                     event.getRecommendationType(), event.getScore());
@@ -260,9 +257,11 @@ public class KafkaConsumerService {
 
             acknowledgment.acknowledge();
 
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse Recommendation event JSON", e);
+            acknowledgment.acknowledge();
         } catch (Exception e) {
-            log.error("✗ Error processing Recommendation - userId: {}, videoId: {}",
-                    event.getUserId(), event.getVideoId(), e);
+            log.error("✗ Error processing Recommendation event", e);
             acknowledgment.acknowledge();
         }
     }
@@ -272,16 +271,14 @@ public class KafkaConsumerService {
      * - Gửi notification qua multiple channels (push, email, in-app)
      * Sử dụng notificationListenerFactory với concurrency cao
      */
-    @KafkaListener(
-            topics = "${kafka.topics.notification}",
-            groupId = "notification-group",
-            containerFactory = "notificationListenerFactory"
-    )
+    @KafkaListener(topics = "${kafka.topics.notification}", groupId = "notification-group", containerFactory = "notificationListenerFactory")
     public void consumeNotificationEvent(
-            @Payload NotificationEvent event,
+            @Payload String jsonPayload,
             Acknowledgment acknowledgment) {
 
         try {
+            NotificationEvent event = objectMapper.readValue(jsonPayload, NotificationEvent.class);
+
             log.info("🔔 Sending notification - userId: {}, type: {}, title: '{}'",
                     event.getUserId(), event.getType(), event.getTitle());
 
@@ -289,14 +286,13 @@ public class KafkaConsumerService {
             notificationService.sendMultiChannelNotification(event);
 
             acknowledgment.acknowledge();
-
             log.debug("✓ Notification sent successfully to userId: {}", event.getUserId());
 
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse Notification event JSON", e);
+            acknowledgment.acknowledge();
         } catch (Exception e) {
-            log.error("✗ Error sending notification - userId: {}, type: {}",
-                    event.getUserId(), event.getType(), e);
-            // Retry lại notification nếu fail
-            // Hoặc acknowledge nếu không muốn block
+            log.error("✗ Error sending notification", e);
             acknowledgment.acknowledge();
         }
     }
@@ -307,20 +303,18 @@ public class KafkaConsumerService {
      * - Single thread để đảm bảo ordering
      * Sử dụng highPriorityListenerFactory
      */
-    @KafkaListener(
-            topics = "${kafka.topics.payment}",
-            groupId = "payment-group",
-            containerFactory = "highPriorityListenerFactory"
-    )
+    @KafkaListener(topics = "${kafka.topics.payment}", groupId = "payment-group", containerFactory = "highPriorityListenerFactory")
     public void consumePaymentEvent(
-            @Payload PaymentEvent event,
+            @Payload String jsonPayload,
             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
             @Header(KafkaHeaders.OFFSET) long offset,
             Acknowledgment acknowledgment) {
 
         try {
+            PaymentEvent event = objectMapper.readValue(jsonPayload, PaymentEvent.class);
+
             log.warn("💳 CRITICAL: Processing payment - transactionId: {}, userId: {}, " +
-                            "status: {}, amount: {}, partition: {}, offset: {}",
+                    "status: {}, amount: {}, partition: {}, offset: {}",
                     event.getTransactionId(), event.getUserId(),
                     event.getStatus(), event.getAmount(), partition, offset);
 
@@ -338,8 +332,7 @@ public class KafkaConsumerService {
                     // Cập nhật subscription
                     paymentService.updateUserSubscription(
                             event.getUserId(),
-                            event.getSubscriptionType()
-                    );
+                            event.getSubscriptionType());
 
                     // Gửi email confirmation
                     notificationService.sendPaymentConfirmation(event);
@@ -362,9 +355,12 @@ public class KafkaConsumerService {
 
             acknowledgment.acknowledge();
 
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse Payment event JSON", e);
+            // KHÔNG acknowledge cho payment parsing error để có thể review
+            throw new RuntimeException("Payment JSON parsing failed", e);
         } catch (Exception e) {
-            log.error("✗✗✗ CRITICAL ERROR processing payment - transactionId: {}",
-                    event.getTransactionId(), e);
+            log.error("✗✗✗ CRITICAL ERROR processing payment", e);
             // KHÔNG acknowledge để retry payment event
             throw new RuntimeException("Payment processing failed", e);
         }
@@ -376,32 +372,38 @@ public class KafkaConsumerService {
      * - Có thể mất một số events (không critical)
      * Sử dụng analyticsListenerFactory
      */
-    @KafkaListener(
-            topics = "${kafka.topics.analytics}",
-            groupId = "analytics-group",
-            containerFactory = "analyticsListenerFactory"
-    )
+    @KafkaListener(topics = "${kafka.topics.analytics}", groupId = "analytics-group", containerFactory = "analyticsListenerFactory")
     public void consumeAnalyticsEventBatch(
-            @Payload List<AnalyticsEvent> events,
+            @Payload List<String> jsonPayloads,
             @Header(KafkaHeaders.RECEIVED_PARTITION) List<Integer> partitions,
             @Header(KafkaHeaders.OFFSET) List<Long> offsets,
             Acknowledgment acknowledgment) {
 
         try {
             log.info("📊 Processing analytics batch - size: {}, partitions: {}, offsets: {}",
-                    events.size(), partitions, offsets);
+                    jsonPayloads.size(), partitions, offsets);
+
+            // Parse all JSON payloads to events
+            List<AnalyticsEvent> events = new ArrayList<>();
+            for (String jsonPayload : jsonPayloads) {
+                try {
+                    AnalyticsEvent event = objectMapper.readValue(jsonPayload, AnalyticsEvent.class);
+                    events.add(event);
+                } catch (JsonProcessingException e) {
+                    log.warn("Failed to parse analytics event, skipping: {}", e.getMessage());
+                }
+            }
 
             // Xử lý batch
-            analyticsService.processBatchEvents(events);
+            if (!events.isEmpty()) {
+                analyticsService.processBatchEvents(events);
+            }
 
             acknowledgment.acknowledge();
-
             log.debug("✓ Analytics batch processed - {} events", events.size());
 
         } catch (Exception e) {
-            log.warn("⚠️ Error processing analytics batch (non-critical): {}",
-                    e.getMessage());
-            // Vẫn acknowledge vì analytics không critical
+            log.warn("⚠️ Error processing analytics batch (non-critical): {}", e.getMessage());
             acknowledgment.acknowledge();
         }
     }
@@ -409,23 +411,26 @@ public class KafkaConsumerService {
     /**
      * Alternative: Single analytics consumer (không dùng batch)
      */
-    @KafkaListener(
-            topics = "${kafka.topics.analytics}",
-            groupId = "analytics-single-group",
-            containerFactory = "kafkaListenerContainerFactory",
-            autoStartup = "false"  // Disabled by default
+    @KafkaListener(topics = "${kafka.topics.analytics}", groupId = "analytics-single-group", containerFactory = "kafkaListenerContainerFactory", autoStartup = "false" // Disabled
+                                                                                                                                                                       // by
+                                                                                                                                                                       // default
     )
     public void consumeAnalyticsEventSingle(
-            @Payload AnalyticsEvent event,
+            @Payload String jsonPayload,
             Acknowledgment acknowledgment) {
 
         try {
+            AnalyticsEvent event = objectMapper.readValue(jsonPayload, AnalyticsEvent.class);
+
             log.debug("📊 Processing analytics - type: {}, userId: {}",
                     event.getEventType(), event.getUserId());
 
             analyticsService.processEvent(event);
             acknowledgment.acknowledge();
 
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to parse analytics event: {}", e.getMessage());
+            acknowledgment.acknowledge();
         } catch (Exception e) {
             log.warn("⚠️ Analytics event failed (non-critical): {}", e.getMessage());
             acknowledgment.acknowledge();

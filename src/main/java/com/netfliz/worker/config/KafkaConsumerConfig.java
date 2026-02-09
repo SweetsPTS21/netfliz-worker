@@ -1,10 +1,6 @@
 package com.netfliz.worker.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
-import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import com.netfliz.worker.constant.KafkaConcurrencyProperties;
-import com.netfliz.worker.model.event.BaseEvent;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,8 +11,6 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.ContainerProperties;
-import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
-import org.springframework.kafka.support.serializer.JsonDeserializer;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -44,22 +38,6 @@ public class KafkaConsumerConfig {
     }
 
     /**
-     * Configure JSON deserializer with type information
-     */
-    private JsonDeserializer<BaseEvent<?>> jsonDeserializer() {
-        ObjectMapper objectMapper = new ObjectMapper();
-        PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
-                .allowIfSubType("com.netfliz.worker.model.event.")
-                .build();
-        objectMapper.activateDefaultTyping(ptv, ObjectMapper.DefaultTyping.NON_FINAL);
-
-        JsonDeserializer<BaseEvent<?>> deserializer = new JsonDeserializer<>(BaseEvent.class, objectMapper);
-        deserializer.addTrustedPackages("com.netfliz.worker.model.event");
-        deserializer.setUseTypeMapperForKey(true);
-        return deserializer;
-    }
-
-    /**
      * Base Consumer Configuration
      * Cấu hình chung cho tất cả consumers
      */
@@ -70,14 +48,9 @@ public class KafkaConsumerConfig {
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
 
-        // Deserializer Configuration với Error Handling
+        // Deserializer Configuration - String only
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
-        props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
-        props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
-        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, BaseEvent.class.getName());
-        props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, "false");
-        props.put(JsonDeserializer.TRUSTED_PACKAGES, "com.netfliz.worker.model.event");
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
 
         // Offset Management
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, autoOffsetReset);
@@ -103,7 +76,7 @@ public class KafkaConsumerConfig {
      * Consumer Factory - Standard
      */
     @Bean
-    public ConsumerFactory<String, Object> consumerFactory() {
+    public ConsumerFactory<String, String> consumerFactory() {
         return new DefaultKafkaConsumerFactory<>(consumerConfigs());
     }
 
@@ -112,9 +85,8 @@ public class KafkaConsumerConfig {
      * Dùng cho các event thông thường
      */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory() {
-        ConcurrentKafkaListenerContainerFactory<String, Object> factory =
-                new ConcurrentKafkaListenerContainerFactory<>();
+    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
+        ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
 
         factory.setConsumerFactory(consumerFactory());
 
@@ -138,13 +110,12 @@ public class KafkaConsumerConfig {
      * Xử lý messages theo batch cho hiệu năng cao
      */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, Object> batchListenerContainerFactory() {
-        ConcurrentKafkaListenerContainerFactory<String, Object> factory =
-                new ConcurrentKafkaListenerContainerFactory<>();
+    public ConcurrentKafkaListenerContainerFactory<String, String> batchListenerContainerFactory() {
+        ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
 
         factory.setConsumerFactory(consumerFactory());
         factory.setConcurrency(concurrency.getVideoView());
-        factory.setBatchListener(true);  // Enable batch processing
+        factory.setBatchListener(true); // Enable batch processing
 
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
         factory.getContainerProperties().setPollTimeout(3000);
@@ -160,17 +131,16 @@ public class KafkaConsumerConfig {
      * - Retry nhiều hơn
      */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, Object> highPriorityListenerFactory() {
+    public ConcurrentKafkaListenerContainerFactory<String, String> highPriorityListenerFactory() {
         Map<String, Object> props = consumerConfigs();
-        props.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, 600000);  // 10 phút
+        props.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, 600000); // 10 phút
 
-        ConsumerFactory<String, Object> factory = new DefaultKafkaConsumerFactory<>(props);
+        ConsumerFactory<String, String> factory = new DefaultKafkaConsumerFactory<>(props);
 
-        ConcurrentKafkaListenerContainerFactory<String, Object> listenerFactory =
-                new ConcurrentKafkaListenerContainerFactory<>();
+        ConcurrentKafkaListenerContainerFactory<String, String> listenerFactory = new ConcurrentKafkaListenerContainerFactory<>();
 
         listenerFactory.setConsumerFactory(factory);
-        listenerFactory.setConcurrency(concurrency.getPayment());  // Single thread
+        listenerFactory.setConcurrency(concurrency.getPayment()); // Single thread
         listenerFactory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
         listenerFactory.getContainerProperties().setPollTimeout(5000);
 
@@ -185,7 +155,7 @@ public class KafkaConsumerConfig {
      * Dùng cho analytics - hiệu năng cao, có thể mất một số messages
      */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, Object> analyticsListenerFactory() {
+    public ConcurrentKafkaListenerContainerFactory<String, String> analyticsListenerFactory() {
         Map<String, Object> props = consumerConfigs();
 
         // Higher throughput settings
@@ -193,13 +163,12 @@ public class KafkaConsumerConfig {
         props.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, 1024);
         props.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, 100);
 
-        ConsumerFactory<String, Object> factory = new DefaultKafkaConsumerFactory<>(props);
+        ConsumerFactory<String, String> factory = new DefaultKafkaConsumerFactory<>(props);
 
-        ConcurrentKafkaListenerContainerFactory<String, Object> listenerFactory =
-                new ConcurrentKafkaListenerContainerFactory<>();
+        ConcurrentKafkaListenerContainerFactory<String, String> listenerFactory = new ConcurrentKafkaListenerContainerFactory<>();
 
         listenerFactory.setConsumerFactory(factory);
-        listenerFactory.setConcurrency(concurrency.getAnalytics());  // Nhiều thread
+        listenerFactory.setConcurrency(concurrency.getAnalytics()); // Nhiều thread
         listenerFactory.setBatchListener(true);
         listenerFactory.getContainerProperties().setAckMode(ContainerProperties.AckMode.BATCH);
         listenerFactory.getContainerProperties().setPollTimeout(1000);
@@ -212,12 +181,11 @@ public class KafkaConsumerConfig {
      * Nhiều thread để xử lý notification nhanh
      */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, Object> notificationListenerFactory() {
-        ConcurrentKafkaListenerContainerFactory<String, Object> factory =
-                new ConcurrentKafkaListenerContainerFactory<>();
+    public ConcurrentKafkaListenerContainerFactory<String, String> notificationListenerFactory() {
+        ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
 
         factory.setConsumerFactory(consumerFactory());
-        factory.setConcurrency(concurrency.getNotification());  // 5 threads
+        factory.setConcurrency(concurrency.getNotification()); // 5 threads
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
         factory.getContainerProperties().setPollTimeout(3000);
         factory.setCommonErrorHandler(new CustomKafkaErrorHandler());
